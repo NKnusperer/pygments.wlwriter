@@ -5,8 +5,8 @@
 
     Contains built-in styles.
 
-    :copyright: 2006-2008 by Georg Brandl.
-    :license: BSD, see LICENSE for more details.
+    :copyright: Copyright 2006-2010 by the Pygments team, see AUTHORS.
+    :license: BSD, see LICENSE for details.
 """
 
 from pygments.plugin import find_plugin_styles
@@ -22,6 +22,7 @@ STYLE_MAP = {
     'autumn':   'autumn::AutumnStyle',
     'murphy':   'murphy::MurphyStyle',
     'manni':    'manni::ManniStyle',
+    'monokai':  'monokai::MonokaiStyle',
     'perldoc':  'perldoc::PerldocStyle',
     'pastie':   'pastie::PastieStyle',
     'borland':  'borland::BorlandStyle',

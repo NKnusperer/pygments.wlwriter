@@ -5,15 +5,10 @@
 
     Base lexer classes.
 
-    :copyright: 2006-2007 by Georg Brandl.
-    :license: BSD, see LICENSE for more details.
+    :copyright: Copyright 2006-2010 by the Pygments team, see AUTHORS.
+    :license: BSD, see LICENSE for details.
 """
 import re
-
-try:
-    set
-except NameError:
-    from sets import Set as set
 
 from pygments.filter import apply_filters, Filter
 from pygments.filters import get_filter_by_name
@@ -23,7 +18,7 @@ from pygments.util import get_bool_opt, get_int_opt, get_list_opt, \
 
 
 __all__ = ['Lexer', 'RegexLexer', 'ExtendedRegexLexer', 'DelegatingLexer',
-           'LexerContext', 'include', 'flags', 'bygroups', 'using', 'this']
+           'LexerContext', 'include', 'bygroups', 'using', 'this']
 
 
 _default_analyse = staticmethod(lambda x: 0.0)
@@ -51,6 +46,10 @@ class Lexer(object):
     ``stripall``
         Strip all leading and trailing whitespace from the input
         (default: False).
+    ``ensurenl``
+        Make sure that the input ends with a newline (default: True).  This
+        is required for some lexers that consume input linewise.
+        *New in Pygments 1.3.*
     ``tabsize``
         If given and greater than 0, expand tabs in the input (default: 0).
     ``encoding``
@@ -82,6 +81,7 @@ class Lexer(object):
         self.options = options
         self.stripnl = get_bool_opt(options, 'stripnl', True)
         self.stripall = get_bool_opt(options, 'stripall', False)
+        self.ensurenl = get_bool_opt(options, 'ensurenl', True)
         self.tabsize = get_int_opt(options, 'tabsize', 0)
         self.encoding = options.get('encoding', 'latin1')
         # self.encoding = options.get('inencoding', None) or self.encoding
@@ -127,8 +127,6 @@ class Lexer(object):
         Also preprocess the text, i.e. expand tabs and strip it if
         wanted and applies registered filters.
         """
-        text = text.replace('\r\n', '\n')
-        text = text.replace('\r', '\n')
         if not isinstance(text, unicode):
             if self.encoding == 'guess':
                 try:
@@ -148,13 +146,16 @@ class Lexer(object):
                 text = text.decode(enc['encoding'])
             else:
                 text = text.decode(self.encoding)
+        # text now *is* a unicode string
+        text = text.replace('\r\n', '\n')
+        text = text.replace('\r', '\n')
         if self.stripall:
             text = text.strip()
         elif self.stripnl:
             text = text.strip('\n')
         if self.tabsize > 0:
             text = text.expandtabs(self.tabsize)
-        if not text.endswith('\n'):
+        if self.ensurenl and not text.endswith('\n'):
             text += '\n'
 
         def streamer():
@@ -477,7 +478,6 @@ class RegexLexer(Lexer):
             for rexmatch, action, new_state in statetokens:
                 m = rexmatch(text, pos)
                 if m:
-                    # print rex.pattern
                     if type(action) is _TokenType:
                         yield pos, action, m.group()
                     else:
@@ -646,9 +646,15 @@ def do_insertions(insertions, tokens):
         realpos += len(v) - oldi
 
     # leftover tokens
-    if insleft:
+    while insleft:
         # no normal tokens, set realpos to zero
         realpos = realpos or 0
         for p, t, v in itokens:
             yield realpos, t, v
             realpos += len(v)
+        try:
+            index, itokens = insertions.next()
+        except StopIteration:
+            insleft = False
+            break  # not strictly necessary
+

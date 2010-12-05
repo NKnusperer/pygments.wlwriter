@@ -5,16 +5,11 @@
 
     Lexers for various template engines' markup.
 
-    :copyright: 2006-2008 by Armin Ronacher, Georg Brandl, Matt Good,
-                Ben Bangert.
-    :license: BSD, see LICENSE for more details.
+    :copyright: Copyright 2006-2010 by the Pygments team, see AUTHORS.
+    :license: BSD, see LICENSE for details.
 """
 
 import re
-try:
-    set
-except NameError:
-    from sets import Set as set
 
 from pygments.lexers.web import \
      PhpLexer, HtmlLexer, XmlLexer, JavascriptLexer, CssLexer
@@ -38,7 +33,9 @@ __all__ = ['HtmlPhpLexer', 'XmlPhpLexer', 'CssPhpLexer',
            'MyghtyCssLexer', 'MyghtyJavascriptLexer', 'MakoLexer',
            'MakoHtmlLexer', 'MakoXmlLexer', 'MakoJavascriptLexer',
            'MakoCssLexer', 'JspLexer', 'CheetahLexer', 'CheetahHtmlLexer',
-           'CheetahXmlLexer', 'CheetahJavascriptLexer']
+           'CheetahXmlLexer', 'CheetahJavascriptLexer',
+           'EvoqueLexer', 'EvoqueHtmlLexer', 'EvoqueXmlLexer',
+           'ColdfusionLexer', 'ColdfusionHtmlLexer']
 
 
 class ErbLexer(Lexer):
@@ -239,13 +236,14 @@ class DjangoLexer(RegexLexer):
              bygroups(Keyword, Text, Keyword, Text, Name.Function)),
             (r'(_|true|false|none|True|False|None)\b', Keyword.Pseudo),
             (r'(in|as|reversed|recursive|not|and|or|is|if|else|import|'
-             r'with(?:(?:out)?\s*context)?)\b', Keyword),
+             r'with(?:(?:out)?\s*context)?|scoped|ignore\s+missing)\b',
+             Keyword),
             (r'(loop|block|super|forloop)\b', Name.Builtin),
             (r'[a-zA-Z][a-zA-Z0-9_]*', Name.Variable),
             (r'\.[a-zA-Z0-9_]+', Name.Variable),
             (r':?"(\\\\|\\"|[^"])*"', String.Double),
             (r":?'(\\\\|\\'|[^'])*'", String.Single),
-            (r'([{}()\[\]+\-*/,:]|[><=]=?)', Operator),
+            (r'([{}()\[\]+\-*/,:~]|[><=]=?)', Operator),
             (r"[0-9](\.[0-9]*)?(eE[+-][0-9])?[flFLdD]?|"
              r"0[xX][0-9a-fA-F]+[Ll]?", Number),
         ],
@@ -412,28 +410,30 @@ class MakoLexer(RegexLexer):
              bygroups(Text, Comment.Preproc, Keyword, Other)),
             (r'(\s*)(%)([^\n]*)(\n|\Z)',
              bygroups(Text, Comment.Preproc, using(PythonLexer), Other)),
-             (r'(\s*)(#[^\n]*)(\n|\Z)',
-              bygroups(Text, Comment.Preproc, Other)),
-            (r'(<%)(def|call|namespace|text)',
+            (r'(\s*)(##[^\n]*)(\n|\Z)',
+             bygroups(Text, Comment.Preproc, Other)),
+            (r'(?s)<%doc>.*?</%doc>', Comment.Preproc),
+            (r'(<%)([\w\.\:]+)',
              bygroups(Comment.Preproc, Name.Builtin), 'tag'),
-            (r'(</%)(def|call|namespace|text)(>)',
+            (r'(</%)([\w\.\:]+)(>)',
              bygroups(Comment.Preproc, Name.Builtin, Comment.Preproc)),
-            (r'<%(?=(include|inherit|namespace|page))', Comment.Preproc, 'ondeftags'),
+            (r'<%(?=([\w\.\:]+))', Comment.Preproc, 'ondeftags'),
             (r'(<%(?:!?))(.*?)(%>)(?s)',
              bygroups(Comment.Preproc, using(PythonLexer), Comment.Preproc)),
-            (r'(\$\{!?)(.*?)(\})(?s)',
+            (r'(\$\{)(.*?)(\})',
              bygroups(Comment.Preproc, using(PythonLexer), Comment.Preproc)),
             (r'''(?sx)
-                (.+?)               # anything, followed by:
+                (.+?)                # anything, followed by:
                 (?:
-                 (?<=\n)(?=[%#]) |  # an eval or comment line
-                 (?=</?%) |         # a python block
-                                    # call start or end
-                 (?=\$\{) |         # a substitution
+                 (?<=\n)(?=%|\#\#) | # an eval or comment line
+                 (?=\#\*) |          # multiline comment
+                 (?=</?%) |          # a python block
+                                     # call start or end
+                 (?=\$\{) |          # a substitution
                  (?<=\n)(?=\s*%) |
-                                    # - don't consume
-                 (\\\n) |           # an escaped newline
-                 \Z                 # end of string
+                                     # - don't consume
+                 (\\\n) |            # an escaped newline
+                 \Z                  # end of string
                 )
             ''', bygroups(Other, Operator)),
             (r'\s+', Text),
@@ -1206,3 +1206,182 @@ class JspLexer(DelegatingLexer):
         if '<%' in text and '%>' in text:
             rv += 0.1
         return rv
+
+
+class EvoqueLexer(RegexLexer):
+    """
+    For files using the Evoque templating system.
+
+    *New in Pygments 1.1.*
+    """
+    name = 'Evoque'
+    aliases = ['evoque']
+    filenames = ['*.evoque']
+    mimetypes = ['application/x-evoque']
+
+    flags = re.DOTALL
+
+    tokens = {
+        'root': [
+            (r'[^#$]+', Other),
+            (r'#\[', Comment.Multiline, 'comment'),
+            (r'\$\$', Other),
+            # svn keywords
+            (r'\$\w+:[^$\n]*\$', Comment.Multiline),
+            # directives: begin, end
+            (r'(\$)(begin|end)(\{(%)?)(.*?)((?(4)%)\})',
+             bygroups(Punctuation, Name.Builtin, Punctuation, None,
+                      String, Punctuation, None)),
+            # directives: evoque, overlay
+            # see doc for handling first name arg: /directives/evoque/
+            #+ minor inconsistency: the "name" in e.g. $overlay{name=site_base}
+            # should be using(PythonLexer), not passed out as String
+            (r'(\$)(evoque|overlay)(\{(%)?)(\s*[#\w\-"\'.]+[^=,%}]+?)?'
+             r'(.*?)((?(4)%)\})',
+             bygroups(Punctuation, Name.Builtin, Punctuation, None,
+                      String, using(PythonLexer), Punctuation, None)),
+            # directives: if, for, prefer, test
+            (r'(\$)(\w+)(\{(%)?)(.*?)((?(4)%)\})',
+             bygroups(Punctuation, Name.Builtin, Punctuation, None,
+                      using(PythonLexer), Punctuation, None)),
+            # directive clauses (no {} expression)
+            (r'(\$)(else|rof|fi)', bygroups(Punctuation, Name.Builtin)),
+            # expressions
+            (r'(\$\{(%)?)(.*?)((!)(.*?))?((?(2)%)\})',
+             bygroups(Punctuation, None, using(PythonLexer),
+                      Name.Builtin, None, None, Punctuation, None)),
+            (r'#', Other),
+        ],
+        'comment': [
+            (r'[^\]#]', Comment.Multiline),
+            (r'#\[', Comment.Multiline, '#push'),
+            (r'\]#', Comment.Multiline, '#pop'),
+            (r'[\]#]', Comment.Multiline)
+        ],
+    }
+
+class EvoqueHtmlLexer(DelegatingLexer):
+    """
+    Subclass of the `EvoqueLexer` that highlights unlexed data with the
+    `HtmlLexer`.
+
+    *New in Pygments 1.1.*
+    """
+    name = 'HTML+Evoque'
+    aliases = ['html+evoque']
+    filenames = ['*.html']
+    mimetypes = ['text/html+evoque']
+
+    def __init__(self, **options):
+        super(EvoqueHtmlLexer, self).__init__(HtmlLexer, EvoqueLexer,
+                                              **options)
+
+class EvoqueXmlLexer(DelegatingLexer):
+    """
+    Subclass of the `EvoqueLexer` that highlights unlexed data with the
+    `XmlLexer`.
+
+    *New in Pygments 1.1.*
+    """
+    name = 'XML+Evoque'
+    aliases = ['xml+evoque']
+    filenames = ['*.xml']
+    mimetypes = ['application/xml+evoque']
+
+    def __init__(self, **options):
+        super(EvoqueXmlLexer, self).__init__(XmlLexer, EvoqueLexer,
+                                             **options)
+
+class ColdfusionLexer(RegexLexer):
+    """
+    Coldfusion statements
+    """
+    name = 'cfstatement'
+    aliases = ['cfs']
+    filenames = []
+    mimetypes = []
+    flags = re.IGNORECASE | re.MULTILINE
+
+    tokens = {
+        'root': [
+            (r'//.*', Comment),
+            (r'\+\+|--', Operator),
+            (r'[-+*/^&=!]', Operator),
+            (r'<=|>=|<|>', Operator),
+            (r'mod\b', Operator),
+            (r'(eq|lt|gt|lte|gte|not|is|and|or)\b', Operator),
+            (r'\|\||&&', Operator),
+            (r'"', String.Double, 'string'),
+            # There is a special rule for allowing html in single quoted
+            # strings, evidently.
+            (r"'.*?'", String.Single),
+            (r'\d+', Number),
+            (r'(if|else|len|var|case|default|break|switch)\b', Keyword),
+            (r'([A-Za-z_$][A-Za-z0-9_.]*)\s*(\()', bygroups(Name.Function, Punctuation)),
+            (r'[A-Za-z_$][A-Za-z0-9_.]*', Name.Variable),
+            (r'[()\[\]{};:,.\\]', Punctuation),
+            (r'\s+', Text),
+        ],
+        'string': [
+            (r'""', String.Double),
+            (r'#.+?#', String.Interp),
+            (r'[^"#]+', String.Double),
+            (r'#', String.Double),
+            (r'"', String.Double, '#pop'),
+        ],
+    }
+
+class ColdfusionMarkupLexer(RegexLexer):
+    """
+    Coldfusion markup only
+    """
+    name = 'Coldfusion'
+    aliases = ['cf']
+    filenames = []
+    mimetypes = []
+
+    tokens = {
+        'root': [
+            (r'[^<]+', Other),
+            include('tags'),
+            (r'<[^<>]*', Other),
+        ],
+        'tags': [
+            (r'(?s)<!---.*?--->', Comment.Multiline),
+            (r'(?s)<!--.*?-->', Comment),
+            (r'<cfoutput.*?>', Name.Builtin, 'cfoutput'),
+            (r'(?s)(<cfscript.*?>)(.+?)(</cfscript.*?>)',
+             bygroups(Name.Builtin, using(ColdfusionLexer), Name.Builtin)),
+            # negative lookbehind is for strings with embedded >
+            (r'(?s)(</?cf(?:component|include|if|else|elseif|loop|return|'
+             r'dbinfo|dump|abort|location|invoke|throw|file|savecontent|'
+             r'mailpart|mail|header|content|zip|image|lock|argument|try|'
+             r'catch|break|directory|http|set|function|param)\b)(.*?)((?<!\\)>)',
+             bygroups(Name.Builtin, using(ColdfusionLexer), Name.Builtin)),
+        ],
+        'cfoutput': [
+            (r'[^#<]+', Other),
+            (r'(#)(.*?)(#)', bygroups(Punctuation, using(ColdfusionLexer),
+                                      Punctuation)),
+            #(r'<cfoutput.*?>', Name.Builtin, '#push'),
+            (r'</cfoutput.*?>', Name.Builtin, '#pop'),
+            include('tags'),
+            (r'(?s)<[^<>]*', Other),
+            (r'#', Other),
+        ],
+    }
+
+
+class ColdfusionHtmlLexer(DelegatingLexer):
+    """
+    Coldfusion markup in html
+    """
+    name = 'Coldufsion HTML'
+    aliases = ['cfm']
+    filenames = ['*.cfm', '*.cfml', '*.cfc']
+    mimetypes = ['application/x-coldfusion']
+
+    def __init__(self, **options):
+        super(ColdfusionHtmlLexer, self).__init__(HtmlLexer, ColdfusionMarkupLexer,
+                                                  **options)
+
